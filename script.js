@@ -7,10 +7,11 @@ let playerGroup, playerModel, mixer;
 let animations = {};
 let currentAction;
 
-let moveForward = false,
-  moveBackward = false,
-  moveLeft = false,
-  moveRight = false;
+let moveForward = false;
+let moveBackward = false;
+let moveLeft = false;
+let moveRight = false;
+let isSprinting = false;
 let canJump = false;
 let velocity = new THREE.Vector3();
 
@@ -24,6 +25,7 @@ const playerScale = 0.8;
 const jumpPower = 20;
 const gravity = 50;
 const moveSpeed = 14;
+const sprintSpeed = 18;
 
 function init() {
   scene = new THREE.Scene();
@@ -35,6 +37,9 @@ function init() {
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = true;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.gammaFactor = 2.2;
   document.body.appendChild(renderer.domElement);
 
   camera = new THREE.PerspectiveCamera(
@@ -48,12 +53,21 @@ function init() {
   cameraPivot.add(camera);
   camera.position.set(0, 4, 8);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.5);
   sun.position.set(50, 300, 50);
   sun.castShadow = true;
-  sun.shadow.mapSize.width = 2048;
-  sun.shadow.mapSize.height = 2048;
+  sun.shadow.mapSize.width = 16384;
+  sun.shadow.mapSize.height = 16384;
+  sun.shadow.radius = 12;
+  sun.shadow.bias = -0.00005;
+  sun.shadow.normalBias = 0.02;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 1000;
+  sun.shadow.camera.left = -100;
+  sun.shadow.camera.right = 100;
+  sun.shadow.camera.top = 100;
+  sun.shadow.camera.bottom = -100;
   scene.add(sun);
 
   playerGroup = new THREE.Group();
@@ -82,10 +96,9 @@ function init() {
       valley.traverse((c) => {
         if (c.isMesh) {
           c.receiveShadow = true;
-          c.castShadow = true;
+          c.castShadow = false; // Only receive shadow
           if (c.material) {
             c.material.side = THREE.DoubleSide;
-            c.material.shadowSide = THREE.DoubleSide;
           }
         }
       });
@@ -101,6 +114,7 @@ function init() {
       infiniteFloor.rotation.x = -Math.PI / 2;
       infiniteFloor.position.y = -2.5;
       infiniteFloor.receiveShadow = true;
+      infiniteFloor.castShadow = false;
       scene.add(infiniteFloor);
       terrainObjects.push(infiniteFloor);
 
@@ -109,7 +123,10 @@ function init() {
         playerModel.scale.set(playerScale, playerScale, playerScale);
         playerModel.position.y = 0;
         playerModel.traverse((c) => {
-          if (c.isMesh) c.castShadow = true;
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = false;
+          }
         });
         playerGroup.add(playerModel);
 
@@ -140,6 +157,7 @@ function init() {
     if (e.code === "KeyS") moveBackward = true;
     if (e.code === "KeyA") moveLeft = true;
     if (e.code === "KeyD") moveRight = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") isSprinting = true;
     if (e.code === "Space" && canJump) {
       velocity.y = jumpPower;
       canJump = false;
@@ -150,6 +168,7 @@ function init() {
     if (e.code === "KeyS") moveBackward = false;
     if (e.code === "KeyA") moveLeft = false;
     if (e.code === "KeyD") moveRight = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") isSprinting = false;
   });
 
   window.addEventListener("resize", onWindowResize);
@@ -171,6 +190,7 @@ function fadeToAction(name, duration = 0.2) {
   if (currentAction) currentAction.fadeOut(duration);
   action.reset().fadeIn(duration).play();
   currentAction = action;
+  return action;
 }
 
 function animate() {
@@ -204,8 +224,9 @@ function animate() {
 
     if (moveDir.length() > 0) {
       moveDir.normalize();
-      targetX += moveDir.x * moveSpeed * delta;
-      targetZ += moveDir.z * moveSpeed * delta;
+      const currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
+      targetX += moveDir.x * currentSpeed * delta;
+      targetZ += moveDir.z * currentSpeed * delta;
       playerModel.rotation.y = Math.atan2(moveDir.x, moveDir.z);
     }
 
@@ -245,9 +266,20 @@ function animate() {
       canJump = false;
     }
 
-    if (!canJump) fadeToAction("jump");
-    else if (moveDir.length() > 0) fadeToAction("run");
-    else fadeToAction("idle");
+    if (!canJump) {
+      fadeToAction("jump");
+      if (currentAction) currentAction.timeScale = 1.0;
+    } else if (moveDir.length() > 0) {
+      const runAction = fadeToAction("run");
+      if (runAction) {
+        runAction.timeScale = isSprinting ? 1.5 : 1.0;
+      } else if (currentAction) {
+        currentAction.timeScale = isSprinting ? 1.5 : 1.0;
+      }
+    } else {
+      fadeToAction("idle");
+      if (currentAction) currentAction.timeScale = 1.0;
+    }
 
     if (playerGroup.position.y < -50) {
       playerGroup.position.set(0, 10, 0);
