@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { float } from "three/tsl";
 
   let scene, camera, renderer, controls, cameraPivot;
   let playerGroup, playerModel, mixer;
@@ -255,6 +256,7 @@ function loadValley(loader) {
 
           loadIslands(loader);
           loadUpperPlatforms(loader);
+          spawnClouds(loader);
         });
       }
 
@@ -348,13 +350,12 @@ function loadValley(loader) {
       function loadSecondIsland(loader) {
         loader.load("assets/Swamp Island.glb", (gltf) => {
           const finalIsland = gltf.scene;
-          finalIsland.rotation.y = -Math.PI / 2; 
-          const endY = 190 + 20 * 1.5;     
-          finalIsland.position.set(
-            Math.sin(20 * 0.25) * 35,
-            endY + 6,                    
-            20 + 20 * 5.0 + 20             
-);
+
+          const baseX = Math.sin(20 * 0.25) * 35;
+          const baseY = 190 + 20 * 1.5 + 6;
+          const baseZ = 20 + 20 * 5.0 + 20;
+  
+          finalIsland.position.set(baseX, baseY, baseZ);
 
           const scale = 8;
           finalIsland.scale.set(scale, scale, scale);
@@ -369,8 +370,128 @@ function loadValley(loader) {
 
           scene.add(finalIsland);
           terrainObjects.push(finalIsland);
+          clover(loader, baseX, baseY, baseZ);
         });
       }
+
+function clover(loader, baseX, baseY, baseZ) {
+  loader.load("assets/Clover.glb", (gltf) => {
+    const sourceModel = gltf.scene;
+    sourceModel.rotation.x = -Math.PI / 3;
+
+    const count = 20;
+    const heightInc = 1.5;
+    const zDistance = 5.0;
+    const start = 15
+
+    const colliderGeo = new THREE.BoxGeometry(2.5, 0.2, 8.0);
+    const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
+
+    let lastX, lastY, lastZ;
+
+    for (let i = 0; i < count; i++) {
+      const y = baseY + i * heightInc;
+      const z = baseZ + start + i * zDistance;
+      const x = baseX + Math.sin(i * 0.25) * 15;
+
+      const container = new THREE.Group();
+      container.position.set(x, y, z);
+
+      const p = sourceModel.clone();
+      p.scale.set(2.5, 2.5, 2.5);
+      p.position.z = 2.5;
+      container.add(p);
+
+      const collider = new THREE.Mesh(colliderGeo, colliderMat);
+      collider.position.z = 2.5;
+      container.add(collider);
+
+      scene.add(container);
+      terrainObjects.push(container);
+
+      lastX = x;
+      lastY = y;
+      lastZ = z;
+    }
+    floatingIsland(loader, lastX, lastY, lastZ);
+  });
+}
+
+function floatingIsland(loader, lastX, lastY, lastZ) {
+    loader.load("assets/floating_island.glb", (gltf) => {
+      const floating_island = gltf.scene;
+      floating_island.rotation.y = Math.PI;
+
+      const box = new THREE.Box3().setFromObject(floating_island);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+
+      const targetSize = 120;
+      const maxAxis = Math.max(size.x, size.z);
+      const scaleFactor = targetSize / maxAxis;
+      floating_island.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+      floating_island.traverse((c) => {
+          if (c.isMesh) {
+              c.castShadow = true;
+              c.receiveShadow = true;
+          }
+      });
+      const container = new THREE.Group();
+      container.position.set(lastX, lastY, lastZ + 25);
+      container.add(floating_island);
+
+      const colliderGeo = new THREE.BoxGeometry(40, 3, 40);
+      const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
+      const collider = new THREE.Mesh(colliderGeo, colliderMat);
+
+      collider.position.y = -1.5;
+      container.add(collider);
+
+      scene.add(container);
+      terrainObjects.push(container);
+      islandColliders.push(
+      new THREE.Box3().setFromObject(collider)
+    );
+  });
+}
+
+function spawnClouds(loader) {
+  loader.load("assets/Clouds.glb", (gltf) => {
+    const cloudSource = gltf.scene;
+
+    const cloudCount = 200;
+    const baseY = 180; 
+
+    const minRadius = 60;     
+    const maxRadius = 500;   
+    const densityBias = 1.5; 
+
+    for (let i = 0; i < cloudCount; i++) {
+      const cloud = cloudSource.clone();
+
+      const scale = 1.8 + (i % 3) * 15;
+      cloud.scale.set(scale, scale, scale);
+
+      const angle = Math.random() * Math.PI * 2;
+      const radius = minRadius + Math.pow(Math.random(), densityBias) * (maxRadius - minRadius);
+
+      const jitterX = (Math.random() - 0.5) * 10;
+      const jitterZ = (Math.random() - 0.5) * 10;
+
+      const x = Math.cos(angle) * radius + jitterX;
+      const z = Math.sin(angle) * radius + jitterZ;
+      const y = baseY + (Math.random() - 0.5) * 12 + Math.sin(i) * 2;
+
+      cloud.position.set(x, y, z);
+      cloud.rotation.y = Math.random() * Math.PI * 2;
+
+      scene.add(cloud);
+    }
+  });
+}
+
+
 
       function createIsland(sourceModel, x, y, z, scale) {
         const p = sourceModel.clone();
