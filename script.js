@@ -291,12 +291,12 @@ function loadValley(loader) {
       }
 
       function loadUpperPlatforms(loader) {
-        loader.load("assets/Ladder.glb", (gltf) => {
+        loader.load("assets/Flower.glb", (gltf) => {
           const sourceModel = gltf.scene;
-          sourceModel.rotation.x = -Math.PI / 2;
+          sourceModel.rotation.x = -Math.PI / 15; // rotate flower 
 
-          const count = 5;
-          const startY = 190;
+          const count = 20;
+          const startY = 190; 
           const heightInc = 1.5;
           const zDistance = 5.0;
 
@@ -340,20 +340,23 @@ function loadValley(loader) {
           }
 
           loadSecondIsland(loader);
+          loadTrees(loader);
+          loadRocks(loader);
         });
       }
 
       function loadSecondIsland(loader) {
         loader.load("assets/Swamp Island.glb", (gltf) => {
           const finalIsland = gltf.scene;
-          const endY = 190 + 3 * 1.5;     
+          finalIsland.rotation.y = -Math.PI / 2; 
+          const endY = 190 + 20 * 1.5;     
           finalIsland.position.set(
-            Math.sin(5 * 0.25) * 35,
-            endY + 10,                    
-            20 + 5 * 5.0 + 20             
+            Math.sin(20 * 0.25) * 35,
+            endY + 6,                    
+            20 + 20 * 5.0 + 20             
 );
 
-          const scale = 10;
+          const scale = 8;
           finalIsland.scale.set(scale, scale, scale);
 
           finalIsland.traverse((c) => {
@@ -382,6 +385,85 @@ function loadValley(loader) {
         scene.add(p);
         islandColliders.push(new THREE.Box3().setFromObject(p));
       }
+
+      function loadTrees(loader) {
+      loader.load("assets/Tree.glb", (gltf) => {
+        const treeModel = gltf.scene;
+
+        const treeCount = 500;          // jumlah pohon
+        const minRadius = 100; 
+        const maxRadius = 800;
+        const groundY = -2.5;
+
+        for (let i = 0; i < treeCount; i++) {
+          const tree = treeModel.clone();
+
+          // biar ngacak dan diluar snowy hills
+          const angle = Math.random() * Math.PI * 2;
+          const radius = minRadius + Math.random() * (maxRadius - minRadius);
+          const x = Math.cos(angle) * radius;
+          const z = Math.sin(angle) * radius;
+
+          // Pohon ditempatkan di dasar tanah
+          const y = groundY;
+
+          const scale = 1.5 + Math.random() * 1.5; // 1.5–3
+          tree.scale.set(scale, scale, scale);
+
+          tree.position.set(x, y, z);
+
+          tree.traverse((c) => {
+            if (c.isMesh) {
+              c.castShadow = true;
+              c.receiveShadow = true;
+              if (c.material) c.material.side = THREE.DoubleSide;
+            }
+          });
+
+          scene.add(tree);
+          // terrainObjects.push(tree);
+        }
+      });
+    }
+
+      function loadRocks(loader) {
+      loader.load("assets/Resource Gold.glb", (gltf) => {
+        const rockModel = gltf.scene;
+
+        const rockCount = 100;         
+        const minRadius = 120;        
+        const maxRadius = 400;        
+        const groundY = -2.5;        
+
+        for (let i = 0; i < rockCount; i++) {
+          const rock = rockModel.clone();
+
+          // diluar snowy hills
+          const angle = Math.random() * Math.PI * 2;
+          const radius = minRadius + Math.random() * (maxRadius - minRadius);
+          const x = Math.cos(angle) * radius;
+          const z = Math.sin(angle) * radius;
+
+          const y = groundY + 0.5;
+
+          const scale = 20 + Math.random() * 5; 
+          rock.scale.set(scale, scale, scale);
+
+          rock.position.set(x, y, z);
+
+          rock.traverse((c) => {
+            if (c.isMesh) {
+              c.castShadow = true;
+              c.receiveShadow = true;
+              if (c.material) c.material.side = THREE.DoubleSide;
+            }
+          });
+
+          scene.add(rock);
+          terrainObjects.push(rock);
+        }
+      });
+    }
 
 function fadeToAction(name, duration = 0.2) {
   let targetKey = Object.keys(animations).find((k) => k.includes(name));
