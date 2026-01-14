@@ -1,27 +1,25 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { float } from "three/tsl";
 
-  let scene, camera, renderer, controls, cameraPivot;
-  let playerGroup, playerModel, mixer;
-  let animations = {};
-  let currentAction;
+let scene, camera, renderer, controls, cameraPivot;
+let playerGroup, playerModel, mixer;
+let animations = {};
+let currentAction;
 
-  let moveForward = false;
-  let moveBackward = false;
-  let moveLeft = false;
-  let moveRight = false;
-  let isSprinting = false;
-  let canJump = false;
-  let velocity = new THREE.Vector3();
+let moveForward = false;
+let moveBackward = false;
+let moveLeft = false;
+let moveRight = false;
+let isSprinting = false;
+let canJump = false;
+let velocity = new THREE.Vector3();
 
 let islandColliders = [];
 let terrainObjects = [];
 const raycaster = new THREE.Raycaster();
 const downVector = new THREE.Vector3(0, -1, 0);
 
-// Reusable boxes for collision detection (performance optimization)
 let footBox = new THREE.Box3();
 let bodyBox = new THREE.Box3();
 
@@ -32,21 +30,34 @@ const jumpPower = 20;
 const gravity = 50;
 const moveSpeed = 14;
 const sprintSpeed = 18;
-const playerRadius = 0.3;
-const playerHeight = 1.6;
 const maxStepHeight = 1.6;
 
 function init() {
+    const listener = new THREE.AudioListener();
+    const audioLoader = new THREE.AudioLoader();
+    const bgm = new THREE.Audio(listener);
+    audioLoader.load('assets/Audio.mp3', function(buffer) {
+      bgm.setBuffer(buffer);
+      bgm.setLoop(true);
+      bgm.setVolume(0.5);
+      function playBGM() {
+        if (!bgm.isPlaying) bgm.play();
+        document.removeEventListener('click', playBGM);
+        window.removeEventListener('mousedown', playBGM);
+      }
+      document.addEventListener('click', playBGM);
+      window.addEventListener('mousedown', playBGM);
+    });
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
   scene.fog = new THREE.Fog(0x87ceeb, 50, 600);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2 for performance
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.shadowMap.autoUpdate = false; // Update shadows manually when needed
+  renderer.shadowMap.autoUpdate = true;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.gammaFactor = 2.2;
   document.body.appendChild(renderer.domElement);
@@ -62,70 +73,29 @@ function init() {
   cameraPivot.add(camera);
   camera.position.set(0, 4, 8);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
   sun.position.set(50, 300, 50);
   sun.castShadow = true;
-  sun.shadow.mapSize.width = 4096; // Reduced from 16384
-  sun.shadow.mapSize.height = 4096; // Reduced from 16384
-  sun.shadow.radius = 8; // Reduced from 12
+  sun.shadow.mapSize.width = 8192;
+  sun.shadow.mapSize.height = 8192;
+  sun.shadow.radius = 16; 
   sun.shadow.bias = -0.00005;
   sun.shadow.normalBias = 0.02;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = 1000;
-  sun.shadow.camera.left = -100;
-  sun.shadow.camera.right = 100;
-  sun.shadow.camera.top = 100;
-  sun.shadow.camera.bottom = -100;
+  sun.shadow.camera.far = 1200;
+  sun.shadow.camera.left = -200;
+  sun.shadow.camera.right = 200;
+  sun.shadow.camera.top = 200;
+  sun.shadow.camera.bottom = -200;
   scene.add(sun);
 
   playerGroup = new THREE.Group();
-  playerGroup.position.set(0, 195, 0);
+  playerGroup.position.set(0, 0, 0);
   scene.add(playerGroup);
 
   const loader = new GLTFLoader();
-
-  loader.load(
-    "assets/Valley Terrain.glb",
-    (gltf) => {
-      const valley = gltf.scene;
-      const box = new THREE.Box3().setFromObject(valley);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-
-      const targetSize = 180;
-      const scaleFactor = targetSize / Math.max(size.x, size.z);
-      valley.scale.set(scaleFactor, scaleFactor, scaleFactor);
-      valley.position.x = -center.x * scaleFactor;
-      valley.position.z = -center.z * scaleFactor;
-      valley.position.y = -box.min.y * scaleFactor - 4.5;
-
-      valley.traverse((c) => {
-        if (c.isMesh) {
-          c.receiveShadow = true;
-          c.castShadow = false; // Only receive shadow
-          if (c.material) {
-            c.material.side = THREE.DoubleSide;
-          }
-        }
-      });
-      scene.add(valley);
-      terrainObjects.push(valley);
-
-      const groundGeo = new THREE.PlaneGeometry(3000, 3000);
-      const groundMat = new THREE.MeshStandardMaterial({
-        color: 0x4e7537,
-        roughness: 1,
-      });
-      const infiniteFloor = new THREE.Mesh(groundGeo, groundMat);
-      infiniteFloor.rotation.x = -Math.PI / 2;
-      infiniteFloor.position.y = -2.5;
-      infiniteFloor.receiveShadow = true;
-      infiniteFloor.castShadow = false;
-      scene.add(infiniteFloor);
-      terrainObjects.push(infiniteFloor);
 
       loader.load("assets/Animated Woman.glb", (gltf) => {
         playerModel = gltf.scene;
@@ -134,7 +104,8 @@ function init() {
         playerModel.traverse((c) => {
           if (c.isMesh) {
             c.castShadow = true;
-            c.receiveShadow = false;
+            c.receiveShadow = true;
+            if (c.material) c.material.needsUpdate = true;
           }
         });
         playerGroup.add(playerModel);
@@ -148,13 +119,12 @@ function init() {
         loadValley(loader);
         document.getElementById("loading").style.display = "none";
       });
-    },
     undefined,
     (error) => {
       console.error("Terjadi kesalahan saat memuat valley:", error);
       document.getElementById("loading").innerText = "Gagal Memuat Model";
     }
-  );
+  
 
   controls = new PointerLockControls(cameraPivot, document.body);
   controls.minPolarAngle = 0.5;
@@ -202,6 +172,7 @@ function loadValley(loader) {
         infiniteFloor.rotation.x = -Math.PI / 2;
         infiniteFloor.position.y = -2.5;
         infiniteFloor.receiveShadow = true;
+        infiniteFloor.castShadow = false;
         scene.add(infiniteFloor);
         terrainObjects.push(infiniteFloor);
 
@@ -226,6 +197,7 @@ function loadValley(loader) {
               c.receiveShadow = true;
               c.castShadow = true;
               if (c.material) c.material.side = THREE.DoubleSide;
+              if (c.material) c.material.needsUpdate = true;
             }
           });
           scene.add(valley);
@@ -354,8 +326,9 @@ function loadValley(loader) {
           const baseX = Math.sin(20 * 0.25) * 35;
           const baseY = 190 + 20 * 1.5 + 6;
           const baseZ = 20 + 20 * 5.0 + 20;
-  
+
           finalIsland.position.set(baseX, baseY, baseZ);
+          finalIsland.rotation.y = -Math.PI / 2;
 
           const scale = 8;
           finalIsland.scale.set(scale, scale, scale);
@@ -490,9 +463,6 @@ function spawnClouds(loader) {
     }
   });
 }
-
-
-
       function createIsland(sourceModel, x, y, z, scale) {
         const p = sourceModel.clone();
         p.position.set(x, y, z);
@@ -501,6 +471,7 @@ function spawnClouds(loader) {
           if (c.isMesh) {
             c.receiveShadow = true;
             c.castShadow = true;
+            if (c.material) c.material.needsUpdate = true;
           }
         });
         scene.add(p);
@@ -511,7 +482,7 @@ function spawnClouds(loader) {
       loader.load("assets/Tree.glb", (gltf) => {
         const treeModel = gltf.scene;
 
-        const treeCount = 500;          // jumlah pohon
+        const treeCount = 500;
         const minRadius = 100; 
         const maxRadius = 800;
         const groundY = -2.5;
@@ -519,16 +490,13 @@ function spawnClouds(loader) {
         for (let i = 0; i < treeCount; i++) {
           const tree = treeModel.clone();
 
-          // biar ngacak dan diluar snowy hills
           const angle = Math.random() * Math.PI * 2;
           const radius = minRadius + Math.random() * (maxRadius - minRadius);
           const x = Math.cos(angle) * radius;
           const z = Math.sin(angle) * radius;
-
-          // Pohon ditempatkan di dasar tanah
           const y = groundY;
 
-          const scale = 1.5 + Math.random() * 1.5; // 1.5–3
+          const scale = 1.5 + Math.random() * 1.5;
           tree.scale.set(scale, scale, scale);
 
           tree.position.set(x, y, z);
@@ -538,11 +506,11 @@ function spawnClouds(loader) {
               c.castShadow = true;
               c.receiveShadow = true;
               if (c.material) c.material.side = THREE.DoubleSide;
+              if (c.material) c.material.needsUpdate = true;
             }
           });
 
           scene.add(tree);
-          // terrainObjects.push(tree);
         }
       });
     }
@@ -559,7 +527,6 @@ function spawnClouds(loader) {
         for (let i = 0; i < rockCount; i++) {
           const rock = rockModel.clone();
 
-          // diluar snowy hills
           const angle = Math.random() * Math.PI * 2;
           const radius = minRadius + Math.random() * (maxRadius - minRadius);
           const x = Math.cos(angle) * radius;
@@ -577,6 +544,7 @@ function spawnClouds(loader) {
               c.castShadow = true;
               c.receiveShadow = true;
               if (c.material) c.material.side = THREE.DoubleSide;
+              if (c.material) c.material.needsUpdate = true;
             }
           });
 
@@ -605,6 +573,16 @@ function animate() {
   if (mixer) mixer.update(delta);
 
   if (controls && controls.isLocked && playerGroup) {
+    console.log(playerGroup.position);
+    const wellPosition = new THREE.Vector3(10, 275, 269);
+    const wellRadius = 6;
+    const playerPos = playerGroup.position;
+    const distToWell = playerPos.distanceTo(wellPosition);
+    if (distToWell < wellRadius && playerPos.y > wellPosition.y - 10 && playerPos.y < wellPosition.y + 10) {
+      document.getElementById('finishOverlay').style.display = 'flex';
+      controls.unlock();
+      return;
+    }
     velocity.y -= gravity * delta;
 
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -633,8 +611,6 @@ function animate() {
       targetZ += moveDir.z * currentSpeed * delta;
       playerModel.rotation.y = Math.atan2(moveDir.x, moveDir.z);
     }
-
-
           let isBlocked = false;
 
           if (terrainObjects.length > 0) {
@@ -657,7 +633,6 @@ function animate() {
               }
             }
           }
-
           if (!isBlocked) {
             playerGroup.position.x = targetX;
             playerGroup.position.z = targetZ;
@@ -687,7 +662,6 @@ function animate() {
       }
     }
 
-    // Reuse pre-allocated boxes instead of creating new ones
     footBox.setFromCenterAndSize(
       new THREE.Vector3(nextPos.x, potentialY + 0.5, nextPos.z),
       new THREE.Vector3(0.6, 1.0, 0.6)
@@ -697,7 +671,6 @@ function animate() {
       new THREE.Vector3(nextPos.x, potentialY + 0.8, nextPos.z),
       new THREE.Vector3(0.6, 1.6, 0.6)
     );
-
           for (let box of islandColliders) {
             if (footBox.intersectsBox(box)) {
               if (
