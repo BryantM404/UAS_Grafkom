@@ -8,19 +8,31 @@
   </head>
   <body>
     <div id="loading">Membangun Daratan...</div>
-    <div id="ui">
+
+    <div id="start-screen">
+      <h1>CLIMB UP</h1>
+      <button id="start-btn">MULAI PETUALANGAN</button>
+    </div>
+
+    <div id="ui" style="display: none">
       <span style="font-size: 28px; font-weight: bold"
         >Tinggi: <span id="height">0</span>m</span
       >
     </div>
-    <div id="instructions">WASD: Gerak | SPACE: Lompat | SHIFT: Lari | Klik untuk Main</div>
+
+    <div id="instructions" style="display: none">
+      WASD: Gerak | SPACE: Lompat | SHIFT: Lari | ESC: Pause
+    </div>
+
+    <div id="finishOverlay" style="display: none">
+      <div class="finish-card">
+        <div class="finish-title">Game Selesai!</div>
+        <button class="finish-btn" onclick="location.reload()">
+          Main Lagi
+        </button>
+      </div>
+    </div>
 
     <script type="module" src="script.js"></script>
-      <div id="finishOverlay" style="display:none;">
-        <div class="finish-card">
-          <div class="finish-title">Game Selesai!</div>
-          <button class="finish-btn" onclick="location.reload()">Main Lagi</button>
-        </div>
-      </div>
   </body>
 </html>

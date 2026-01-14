@@ -7,6 +7,8 @@ let playerGroup, playerModel, mixer;
 let animations = {};
 let currentAction;
 
+let isGameActive = false;
+
 let moveForward = false;
 let moveBackward = false;
 let moveLeft = false;
@@ -32,27 +34,35 @@ const moveSpeed = 14;
 const sprintSpeed = 18;
 const maxStepHeight = 1.6;
 
+const startScreen = document.getElementById("start-screen");
+const startBtn = document.getElementById("start-btn");
+const uiElement = document.getElementById("ui");
+const instructionsElement = document.getElementById("instructions");
+const loadingElement = document.getElementById("loading");
+const finishOverlay = document.getElementById("finishOverlay");
+
 function init() {
-    const listener = new THREE.AudioListener();
-    const audioLoader = new THREE.AudioLoader();
-    const bgm = new THREE.Audio(listener);
-    audioLoader.load('assets/Audio.mp3', function(buffer) {
-      bgm.setBuffer(buffer);
-      bgm.setLoop(true);
-      bgm.setVolume(0.5);
-      function playBGM() {
-        if (!bgm.isPlaying) bgm.play();
-        document.removeEventListener('click', playBGM);
-        window.removeEventListener('mousedown', playBGM);
-      }
-      document.addEventListener('click', playBGM);
-      window.addEventListener('mousedown', playBGM);
-    });
+  const listener = new THREE.AudioListener();
+  const audioLoader = new THREE.AudioLoader();
+  const bgm = new THREE.Audio(listener);
+  audioLoader.load("assets/Audio.mp3", function (buffer) {
+    bgm.setBuffer(buffer);
+    bgm.setLoop(true);
+    bgm.setVolume(0.5);
+    function playBGM() {
+      if (!bgm.isPlaying) bgm.play();
+      document.removeEventListener("click", playBGM);
+      window.removeEventListener("mousedown", playBGM);
+    }
+    document.addEventListener("click", playBGM);
+    window.addEventListener("mousedown", playBGM);
+  });
+
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
   scene.fog = new THREE.Fog(0x87ceeb, 50, 600);
 
-  renderer = new THREE.WebGLRenderer();
+  renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -62,16 +72,17 @@ function init() {
   renderer.gammaFactor = 2.2;
   document.body.appendChild(renderer.domElement);
 
+  cameraPivot = new THREE.Object3D();
+  scene.add(cameraPivot);
+
   camera = new THREE.PerspectiveCamera(
     75,
     window.innerWidth / window.innerHeight,
     0.1,
     2000
   );
-  cameraPivot = new THREE.Object3D();
-  scene.add(cameraPivot);
-  cameraPivot.add(camera);
-  camera.position.set(0, 4, 8);
+  camera.position.set(0, 0, 0);
+  scene.add(camera);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.3));
   const sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -79,10 +90,9 @@ function init() {
   sun.castShadow = true;
   sun.shadow.mapSize.width = 8192;
   sun.shadow.mapSize.height = 8192;
-  sun.shadow.radius = 16; 
+  sun.shadow.radius = 16;
   sun.shadow.bias = -0.00005;
   sun.shadow.normalBias = 0.02;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   sun.shadow.camera.near = 0.5;
   sun.shadow.camera.far = 1200;
   sun.shadow.camera.left = -200;
@@ -93,44 +103,50 @@ function init() {
 
   playerGroup = new THREE.Group();
   playerGroup.position.set(0, 0, 0);
+  playerGroup.visible = false;
   scene.add(playerGroup);
 
   const loader = new GLTFLoader();
 
-      loader.load("assets/Animated Woman.glb", (gltf) => {
-        playerModel = gltf.scene;
-        playerModel.scale.set(playerScale, playerScale, playerScale);
-        playerModel.position.y = 0;
-        playerModel.traverse((c) => {
-          if (c.isMesh) {
-            c.castShadow = true;
-            c.receiveShadow = true;
-            if (c.material) c.material.needsUpdate = true;
-          }
-        });
-        playerGroup.add(playerModel);
+  loader.load("assets/Animated Woman.glb", (gltf) => {
+    playerModel = gltf.scene;
+    playerModel.scale.set(playerScale, playerScale, playerScale);
+    playerModel.position.y = 0;
+    playerModel.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.receiveShadow = false;
+        if (c.material) c.material.needsUpdate = true;
+      }
+    });
+    playerGroup.add(playerModel);
 
-        mixer = new THREE.AnimationMixer(playerModel);
-        gltf.animations.forEach((clip) => {
-          animations[clip.name.toLowerCase()] = mixer.clipAction(clip);
-        });
-        fadeToAction("idle");
+    mixer = new THREE.AnimationMixer(playerModel);
+    gltf.animations.forEach((clip) => {
+      animations[clip.name.toLowerCase()] = mixer.clipAction(clip);
+    });
+    fadeToAction("idle");
 
-        loadValley(loader);
-        document.getElementById("loading").style.display = "none";
-      });
-    undefined,
-    (error) => {
-      console.error("Terjadi kesalahan saat memuat valley:", error);
-      document.getElementById("loading").innerText = "Gagal Memuat Model";
-    }
-  
+    loadValley(loader);
+  });
 
   controls = new PointerLockControls(cameraPivot, document.body);
   controls.minPolarAngle = 0.5;
   controls.maxPolarAngle = Math.PI - 0.5;
 
-  document.addEventListener("click", () => controls.lock());
+  startBtn.addEventListener("click", startGame);
+
+  controls.addEventListener("lock", () => {
+    startScreen.style.display = "none";
+    uiElement.style.display = "block";
+    instructionsElement.style.display = "block";
+    instructionsElement.innerText =
+      "WASD: Gerak | SPACE: Lompat | SHIFT: Lari | ESC: Pause";
+  });
+
+  controls.addEventListener("unlock", () => {
+    instructionsElement.innerText = "Game Terjeda. Klik layar untuk lanjut.";
+  });
 
   window.addEventListener("keydown", (e) => {
     if (e.code === "KeyW") moveForward = true;
@@ -138,7 +154,7 @@ function init() {
     if (e.code === "KeyA") moveLeft = true;
     if (e.code === "KeyD") moveRight = true;
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") isSprinting = true;
-    if (e.code === "Space" && canJump) {
+    if (e.code === "Space" && canJump && isGameActive) {
       velocity.y = jumpPower;
       canJump = false;
     }
@@ -156,6 +172,47 @@ function init() {
   animate();
 }
 
+function startGame() {
+  controls.lock();
+  isGameActive = true;
+  playerGroup.visible = true;
+
+  const startRayOrigin = new THREE.Vector3(0, 20, 0);
+  raycaster.set(startRayOrigin, downVector);
+
+  const intersects = raycaster.intersectObjects(terrainObjects, true);
+
+  if (intersects.length > 0) {
+    playerGroup.position.y = intersects[0].point.y;
+  } else {
+    playerGroup.position.y = 10;
+  }
+
+  startScreen.style.display = "none";
+  uiElement.style.display = "block";
+  instructionsElement.style.display = "block";
+
+  cameraPivot.add(camera);
+
+  cameraPivot.position.copy(playerGroup.position);
+  cameraPivot.position.y += 1.0;
+
+  cameraPivot.quaternion.identity();
+  camera.quaternion.identity();
+  camera.position.set(0, 3, 6);
+  camera.rotation.x = -0.2;
+
+  document.addEventListener("click", () => {
+    if (
+      isGameActive &&
+      !controls.isLocked &&
+      finishOverlay.style.display !== "flex"
+    ) {
+      controls.lock();
+    }
+  });
+}
+
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -163,189 +220,190 @@ function onWindowResize() {
 }
 
 function loadValley(loader) {
-        const groundGeo = new THREE.PlaneGeometry(3000, 3000);
-        const groundMat = new THREE.MeshStandardMaterial({
-          color: 0x62a348, 
-          roughness: 1,
-        });
-        const infiniteFloor = new THREE.Mesh(groundGeo, groundMat);
-        infiniteFloor.rotation.x = -Math.PI / 2;
-        infiniteFloor.position.y = -2.5;
-        infiniteFloor.receiveShadow = true;
-        infiniteFloor.castShadow = false;
-        scene.add(infiniteFloor);
-        terrainObjects.push(infiniteFloor);
+  const groundGeo = new THREE.PlaneGeometry(3000, 3000);
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: 0x62a348,
+    roughness: 1,
+  });
+  const infiniteFloor = new THREE.Mesh(groundGeo, groundMat);
+  infiniteFloor.rotation.x = -Math.PI / 2;
+  infiniteFloor.position.y = -2.5;
+  infiniteFloor.receiveShadow = true;
+  infiniteFloor.castShadow = false;
+  scene.add(infiniteFloor);
+  terrainObjects.push(infiniteFloor);
 
-        loader.load("assets/Valley Terrain.glb", (gltf) => {
-          const valley = gltf.scene;
-          const box = new THREE.Box3().setFromObject(valley);
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          const center = new THREE.Vector3();
-          box.getCenter(center);
+  loader.load("assets/Valley Terrain.glb", (gltf) => {
+    const valley = gltf.scene;
+    const box = new THREE.Box3().setFromObject(valley);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
 
-          const targetSize = 180;
-          const scaleFactor = targetSize / Math.max(size.x, size.z);
-          valley.scale.set(scaleFactor, scaleFactor, scaleFactor);
-          valley.position.x = -center.x * scaleFactor;
-          valley.position.z = -center.z * scaleFactor;
-          valley.position.y = -box.min.y * scaleFactor - 4.5;
+    const targetSize = 180;
+    const scaleFactor = targetSize / Math.max(size.x, size.z);
+    valley.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    valley.position.x = -center.x * scaleFactor;
+    valley.position.z = -center.z * scaleFactor;
+    valley.position.y = -box.min.y * scaleFactor - 4.5;
 
-          valley.updateMatrixWorld(true);
-          valley.traverse((c) => {
-            if (c.isMesh) {
-              c.receiveShadow = true;
-              c.castShadow = true;
-              if (c.material) c.material.side = THREE.DoubleSide;
-              if (c.material) c.material.needsUpdate = true;
-            }
-          });
-          scene.add(valley);
-          terrainObjects.push(valley);
+    valley.updateMatrixWorld(true);
+    valley.traverse((c) => {
+      if (c.isMesh) {
+        c.receiveShadow = true;
+        c.castShadow = true;
+        if (c.material) c.material.side = THREE.DoubleSide;
+        if (c.material) c.material.needsUpdate = true;
+      }
+    });
+    scene.add(valley);
+    terrainObjects.push(valley);
 
-          loadBigIsland(loader);
-        });
+    loadBigIsland(loader);
+  });
+}
+
+function loadBigIsland(loader) {
+  loader.load("assets/Pulau2.glb", (gltf) => {
+    const bigIsland = gltf.scene;
+    bigIsland.position.set(0, 185, 0);
+
+    const scale = 60;
+    bigIsland.scale.set(scale, scale, scale);
+
+    bigIsland.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.receiveShadow = true;
+        if (c.material) c.material.side = THREE.DoubleSide;
+      }
+    });
+
+    scene.add(bigIsland);
+    terrainObjects.push(bigIsland);
+
+    loadUpperPlatforms(loader);
+    spawnClouds(loader);
+    loadIslands(loader);
+  });
+}
+
+function loadIslands(loader) {
+  loader.load("assets/Island.glb", (gltf) => {
+    loadingElement.style.display = "none";
+    startScreen.style.display = "flex";
+
+    const model = gltf.scene;
+    const totalPlatforms = 300;
+    const heightStep = 3.5;
+    const startHeight = 1.5;
+
+    for (let i = 0; i < totalPlatforms; i++) {
+      let angle = i * 0.25;
+      let y = startHeight + i * heightStep;
+
+      let baseRadius = 45 + Math.sin(i * 0.5) * 10;
+      if (y > 160 && y < 190) {
+        const progress = (y - 160) / (190 - 160);
+        baseRadius = THREE.MathUtils.lerp(baseRadius, 15, progress);
       }
 
-      function loadBigIsland(loader) {
-        loader.load("assets/Pulau2.glb", (gltf) => {
-          const bigIsland = gltf.scene;
-          bigIsland.position.set(0, 185, 0);
+      const x = Math.cos(angle) * baseRadius;
+      const z = Math.sin(angle) * baseRadius;
 
-          const scale = 60;
-          bigIsland.scale.set(scale, scale, scale);
+      if (y > 190) continue;
 
-          bigIsland.traverse((c) => {
-            if (c.isMesh) {
-              c.castShadow = true;
-              c.receiveShadow = true;
-              if (c.material) c.material.side = THREE.DoubleSide;
-            }
-          });
+      let scaleVal = Math.max(4, 7 - i * 0.01);
+      if (i % 20 === 0) scaleVal = 12;
 
-          scene.add(bigIsland);
-          terrainObjects.push(bigIsland);
+      createIsland(model, x, y, z, [scaleVal, 1, scaleVal]);
+    }
+  });
+}
 
-          loadIslands(loader);
-          loadUpperPlatforms(loader);
-          spawnClouds(loader);
-        });
+function loadUpperPlatforms(loader) {
+  loader.load("assets/Flower.glb", (gltf) => {
+    const sourceModel = gltf.scene;
+    sourceModel.rotation.x = -Math.PI / 15;
+
+    const count = 20;
+    const startY = 190;
+    const heightInc = 1.5;
+    const zDistance = 5.0;
+
+    const colliderGeo = new THREE.BoxGeometry(2.5, 0.2, 8.0);
+    const colliderMat = new THREE.MeshBasicMaterial({
+      visible: false,
+    });
+
+    for (let i = 0; i < count; i++) {
+      const y = startY + i * heightInc;
+      const currentZ = 20 + i * zDistance;
+      const currentX = Math.sin(i * 0.25) * 35;
+
+      const nextZ = 20 + (i + 1) * zDistance;
+      const nextX = Math.sin((i + 1) * 0.25) * 35;
+
+      const container = new THREE.Group();
+      container.position.set(currentX, y, currentZ);
+      container.lookAt(nextX, y, nextZ);
+
+      const p = sourceModel.clone();
+      const s = 2.5;
+      p.scale.set(s, s, s);
+      p.position.z = 2.5;
+      container.add(p);
+
+      p.traverse((c) => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) c.material.side = THREE.DoubleSide;
+        }
+      });
+
+      const collider = new THREE.Mesh(colliderGeo, colliderMat);
+      collider.position.z = 2.5;
+      container.add(collider);
+
+      scene.add(container);
+      terrainObjects.push(container);
+    }
+
+    loadSecondIsland(loader);
+    loadTrees(loader);
+    loadRocks(loader);
+  });
+}
+
+function loadSecondIsland(loader) {
+  loader.load("assets/Swamp Island.glb", (gltf) => {
+    const finalIsland = gltf.scene;
+
+    const baseX = Math.sin(20 * 0.25) * 35;
+    const baseY = 190 + 20 * 1.5 + 6;
+    const baseZ = 20 + 20 * 5.0 + 20;
+
+    finalIsland.position.set(baseX, baseY, baseZ);
+    finalIsland.rotation.y = -Math.PI / 2;
+
+    const scale = 8;
+    finalIsland.scale.set(scale, scale, scale);
+
+    finalIsland.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.receiveShadow = true;
+        if (c.material) c.material.side = THREE.DoubleSide;
       }
+    });
 
-      function loadIslands(loader) {
-        loader.load("assets/Island.glb", (gltf) => {
-          document.getElementById("loading").style.display = "none";
-          const model = gltf.scene;
-
-          const totalPlatforms = 300;
-          const heightStep = 3.5;
-          const startHeight = 1.5;
-
-          for (let i = 0; i < totalPlatforms; i++) {
-            let angle = i * 0.25;
-            let y = startHeight + i * heightStep;
-
-            let baseRadius = 45 + Math.sin(i * 0.5) * 10;
-            if (y > 160 && y < 190) {
-              const progress = (y - 160) / (190 - 160);
-              baseRadius = THREE.MathUtils.lerp(baseRadius, 15, progress);
-            }
-
-            const x = Math.cos(angle) * baseRadius;
-            const z = Math.sin(angle) * baseRadius;
-
-            if (y > 190) continue;
-
-            let scaleVal = Math.max(4, 7 - i * 0.01);
-            if (i % 20 === 0) scaleVal = 12;
-
-            createIsland(model, x, y, z, [scaleVal, 1, scaleVal]);
-          }
-        });
-      }
-
-      function loadUpperPlatforms(loader) {
-        loader.load("assets/Flower.glb", (gltf) => {
-          const sourceModel = gltf.scene;
-          sourceModel.rotation.x = -Math.PI / 15; // rotate flower 
-
-          const count = 20;
-          const startY = 190; 
-          const heightInc = 1.5;
-          const zDistance = 5.0;
-
-          const colliderGeo = new THREE.BoxGeometry(2.5, 0.2, 8.0);
-          const colliderMat = new THREE.MeshBasicMaterial({
-            visible: false,
-          });
-
-          for (let i = 0; i < count; i++) {
-            const y = startY + i * heightInc;
-            const currentZ = 20 + i * zDistance;
-            const currentX = Math.sin(i * 0.25) * 35;
-
-            const nextZ = 20 + (i + 1) * zDistance;
-            const nextX = Math.sin((i + 1) * 0.25) * 35;
-
-            const container = new THREE.Group();
-            container.position.set(currentX, y, currentZ);
-            container.lookAt(nextX, y, nextZ);
-
-            const p = sourceModel.clone();
-            const s = 2.5;
-            p.scale.set(s, s, s);
-            p.position.z = 2.5;
-            container.add(p);
-
-            p.traverse((c) => {
-              if (c.isMesh) {
-                c.castShadow = true;
-                c.receiveShadow = true;
-                if (c.material) c.material.side = THREE.DoubleSide;
-              }
-            });
-
-            const collider = new THREE.Mesh(colliderGeo, colliderMat);
-            collider.position.z = 2.5;
-            container.add(collider);
-
-            scene.add(container);
-            terrainObjects.push(container);
-          }
-
-          loadSecondIsland(loader);
-          loadTrees(loader);
-          loadRocks(loader);
-        });
-      }
-
-      function loadSecondIsland(loader) {
-        loader.load("assets/Swamp Island.glb", (gltf) => {
-          const finalIsland = gltf.scene;
-
-          const baseX = Math.sin(20 * 0.25) * 35;
-          const baseY = 190 + 20 * 1.5 + 6;
-          const baseZ = 20 + 20 * 5.0 + 20;
-
-          finalIsland.position.set(baseX, baseY, baseZ);
-          finalIsland.rotation.y = -Math.PI / 2;
-
-          const scale = 8;
-          finalIsland.scale.set(scale, scale, scale);
-
-          finalIsland.traverse((c) => {
-            if (c.isMesh) {
-              c.castShadow = true;
-              c.receiveShadow = true;
-              if (c.material) c.material.side = THREE.DoubleSide;
-            }
-          });
-
-          scene.add(finalIsland);
-          terrainObjects.push(finalIsland);
-          clover(loader, baseX, baseY, baseZ);
-        });
-      }
+    scene.add(finalIsland);
+    terrainObjects.push(finalIsland);
+    clover(loader, baseX, baseY, baseZ);
+  });
+}
 
 function clover(loader, baseX, baseY, baseZ) {
   loader.load("assets/Clover.glb", (gltf) => {
@@ -355,7 +413,7 @@ function clover(loader, baseX, baseY, baseZ) {
     const count = 20;
     const heightInc = 1.5;
     const zDistance = 5.0;
-    const start = 15
+    const start = 15;
 
     const colliderGeo = new THREE.BoxGeometry(2.5, 0.2, 8.0);
     const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -391,168 +449,148 @@ function clover(loader, baseX, baseY, baseZ) {
 }
 
 function floatingIsland(loader, lastX, lastY, lastZ) {
-    loader.load("assets/floating_island.glb", (gltf) => {
-      const floating_island = gltf.scene;
-      floating_island.rotation.y = Math.PI;
+  loader.load("assets/floating_island.glb", (gltf) => {
+    const floating_island = gltf.scene;
+    floating_island.rotation.y = Math.PI;
 
-      const box = new THREE.Box3().setFromObject(floating_island);
-      const size = new THREE.Vector3();
-      box.getSize(size);
+    const box = new THREE.Box3().setFromObject(floating_island);
+    const size = new THREE.Vector3();
+    box.getSize(size);
 
-      const targetSize = 120;
-      const maxAxis = Math.max(size.x, size.z);
-      const scaleFactor = targetSize / maxAxis;
-      floating_island.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    const targetSize = 120;
+    const maxAxis = Math.max(size.x, size.z);
+    const scaleFactor = targetSize / maxAxis;
+    floating_island.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-      floating_island.traverse((c) => {
-          if (c.isMesh) {
-              c.castShadow = true;
-              c.receiveShadow = true;
-          }
-      });
-      const container = new THREE.Group();
-      container.position.set(lastX, lastY, lastZ + 25);
-      container.add(floating_island);
+    floating_island.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.receiveShadow = true;
+      }
+    });
+    const container = new THREE.Group();
+    container.position.set(lastX, lastY, lastZ + 25);
+    container.add(floating_island);
 
-      const colliderGeo = new THREE.BoxGeometry(40, 3, 40);
-      const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
-      const collider = new THREE.Mesh(colliderGeo, colliderMat);
+    const colliderGeo = new THREE.BoxGeometry(40, 3, 40);
+    const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
+    const collider = new THREE.Mesh(colliderGeo, colliderMat);
 
-      collider.position.y = -1.5;
-      container.add(collider);
+    collider.position.y = -1.5;
+    container.add(collider);
 
-      scene.add(container);
-      terrainObjects.push(container);
-      islandColliders.push(
-      new THREE.Box3().setFromObject(collider)
-    );
+    scene.add(container);
+    terrainObjects.push(container);
+    islandColliders.push(new THREE.Box3().setFromObject(collider));
   });
 }
 
 function spawnClouds(loader) {
   loader.load("assets/Clouds.glb", (gltf) => {
     const cloudSource = gltf.scene;
-
     const cloudCount = 200;
-    const baseY = 180; 
-
-    const minRadius = 60;     
-    const maxRadius = 500;   
-    const densityBias = 1.5; 
+    const baseY = 180;
+    const minRadius = 60;
+    const maxRadius = 500;
+    const densityBias = 1.5;
 
     for (let i = 0; i < cloudCount; i++) {
       const cloud = cloudSource.clone();
-
       const scale = 1.8 + (i % 3) * 15;
       cloud.scale.set(scale, scale, scale);
-
       const angle = Math.random() * Math.PI * 2;
-      const radius = minRadius + Math.pow(Math.random(), densityBias) * (maxRadius - minRadius);
-
+      const radius =
+        minRadius +
+        Math.pow(Math.random(), densityBias) * (maxRadius - minRadius);
       const jitterX = (Math.random() - 0.5) * 10;
       const jitterZ = (Math.random() - 0.5) * 10;
-
       const x = Math.cos(angle) * radius + jitterX;
       const z = Math.sin(angle) * radius + jitterZ;
       const y = baseY + (Math.random() - 0.5) * 12 + Math.sin(i) * 2;
-
       cloud.position.set(x, y, z);
       cloud.rotation.y = Math.random() * Math.PI * 2;
-
       scene.add(cloud);
     }
   });
 }
-      function createIsland(sourceModel, x, y, z, scale) {
-        const p = sourceModel.clone();
-        p.position.set(x, y, z);
-        p.scale.set(scale[0], scale[1], scale[2]);
-        p.traverse((c) => {
-          if (c.isMesh) {
-            c.receiveShadow = true;
-            c.castShadow = true;
-            if (c.material) c.material.needsUpdate = true;
-          }
-        });
-        scene.add(p);
-        islandColliders.push(new THREE.Box3().setFromObject(p));
-      }
 
-      function loadTrees(loader) {
-      loader.load("assets/Tree.glb", (gltf) => {
-        const treeModel = gltf.scene;
+function createIsland(sourceModel, x, y, z, scale) {
+  const p = sourceModel.clone();
+  p.position.set(x, y, z);
+  p.scale.set(scale[0], scale[1], scale[2]);
+  p.traverse((c) => {
+    if (c.isMesh) {
+      c.receiveShadow = true;
+      c.castShadow = true;
+      if (c.material) c.material.needsUpdate = true;
+    }
+  });
+  scene.add(p);
+  islandColliders.push(new THREE.Box3().setFromObject(p));
+}
 
-        const treeCount = 500;
-        const minRadius = 100; 
-        const maxRadius = 800;
-        const groundY = -2.5;
+function loadTrees(loader) {
+  loader.load("assets/Tree.glb", (gltf) => {
+    const treeModel = gltf.scene;
+    const treeCount = 500;
+    const minRadius = 100;
+    const maxRadius = 800;
+    const groundY = -2.5;
 
-        for (let i = 0; i < treeCount; i++) {
-          const tree = treeModel.clone();
-
-          const angle = Math.random() * Math.PI * 2;
-          const radius = minRadius + Math.random() * (maxRadius - minRadius);
-          const x = Math.cos(angle) * radius;
-          const z = Math.sin(angle) * radius;
-          const y = groundY;
-
-          const scale = 1.5 + Math.random() * 1.5;
-          tree.scale.set(scale, scale, scale);
-
-          tree.position.set(x, y, z);
-
-          tree.traverse((c) => {
-            if (c.isMesh) {
-              c.castShadow = true;
-              c.receiveShadow = true;
-              if (c.material) c.material.side = THREE.DoubleSide;
-              if (c.material) c.material.needsUpdate = true;
-            }
-          });
-
-          scene.add(tree);
+    for (let i = 0; i < treeCount; i++) {
+      const tree = treeModel.clone();
+      const angle = Math.random() * Math.PI * 2;
+      const radius = minRadius + Math.random() * (maxRadius - minRadius);
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const y = groundY;
+      const scale = 1.5 + Math.random() * 1.5;
+      tree.scale.set(scale, scale, scale);
+      tree.position.set(x, y, z);
+      tree.traverse((c) => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) c.material.side = THREE.DoubleSide;
+          if (c.material) c.material.needsUpdate = true;
         }
       });
+      scene.add(tree);
     }
+  });
+}
 
-      function loadRocks(loader) {
-      loader.load("assets/Resource Gold.glb", (gltf) => {
-        const rockModel = gltf.scene;
+function loadRocks(loader) {
+  loader.load("assets/Resource Gold.glb", (gltf) => {
+    const rockModel = gltf.scene;
+    const rockCount = 100;
+    const minRadius = 120;
+    const maxRadius = 400;
+    const groundY = -2.5;
 
-        const rockCount = 100;         
-        const minRadius = 120;        
-        const maxRadius = 400;        
-        const groundY = -2.5;        
-
-        for (let i = 0; i < rockCount; i++) {
-          const rock = rockModel.clone();
-
-          const angle = Math.random() * Math.PI * 2;
-          const radius = minRadius + Math.random() * (maxRadius - minRadius);
-          const x = Math.cos(angle) * radius;
-          const z = Math.sin(angle) * radius;
-
-          const y = groundY + 0.5;
-
-          const scale = 20 + Math.random() * 5; 
-          rock.scale.set(scale, scale, scale);
-
-          rock.position.set(x, y, z);
-
-          rock.traverse((c) => {
-            if (c.isMesh) {
-              c.castShadow = true;
-              c.receiveShadow = true;
-              if (c.material) c.material.side = THREE.DoubleSide;
-              if (c.material) c.material.needsUpdate = true;
-            }
-          });
-
-          scene.add(rock);
-          terrainObjects.push(rock);
+    for (let i = 0; i < rockCount; i++) {
+      const rock = rockModel.clone();
+      const angle = Math.random() * Math.PI * 2;
+      const radius = minRadius + Math.random() * (maxRadius - minRadius);
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const y = groundY + 0.5;
+      const scale = 20 + Math.random() * 5;
+      rock.scale.set(scale, scale, scale);
+      rock.position.set(x, y, z);
+      rock.traverse((c) => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) c.material.side = THREE.DoubleSide;
+          if (c.material) c.material.needsUpdate = true;
         }
       });
+      scene.add(rock);
+      terrainObjects.push(rock);
     }
+  });
+}
 
 function fadeToAction(name, duration = 0.2) {
   let targetKey = Object.keys(animations).find((k) => k.includes(name));
@@ -572,14 +610,24 @@ function animate() {
 
   if (mixer) mixer.update(delta);
 
-  if (controls && controls.isLocked && playerGroup) {
-    console.log(playerGroup.position);
+  if (!isGameActive) {
+    const rotSpeed = time * 0.0001;
+    const radius = 250;
+    camera.position.x = Math.sin(rotSpeed) * radius;
+    camera.position.z = Math.cos(rotSpeed) * radius;
+    camera.position.y = 150 + Math.sin(time * 0.0005) * 50;
+    camera.lookAt(0, 100, 0);
+  } else if (controls && controls.isLocked && playerGroup) {
     const wellPosition = new THREE.Vector3(10, 275, 269);
     const wellRadius = 6;
     const playerPos = playerGroup.position;
     const distToWell = playerPos.distanceTo(wellPosition);
-    if (distToWell < wellRadius && playerPos.y > wellPosition.y - 10 && playerPos.y < wellPosition.y + 10) {
-      document.getElementById('finishOverlay').style.display = 'flex';
+    if (
+      distToWell < wellRadius &&
+      playerPos.y > wellPosition.y - 10 &&
+      playerPos.y < wellPosition.y + 10
+    ) {
+      finishOverlay.style.display = "flex";
       controls.unlock();
       return;
     }
@@ -611,32 +659,31 @@ function animate() {
       targetZ += moveDir.z * currentSpeed * delta;
       playerModel.rotation.y = Math.atan2(moveDir.x, moveDir.z);
     }
-          let isBlocked = false;
 
-          if (terrainObjects.length > 0) {
+    let isBlocked = false;
+    if (terrainObjects.length > 0) {
+      const rayOriginTop = new THREE.Vector3(
+        targetX,
+        playerGroup.position.y + 2.5,
+        targetZ
+      );
+      raycaster.set(rayOriginTop, downVector);
+      const intersects = raycaster.intersectObjects(terrainObjects, true);
 
-            const rayOriginTop = new THREE.Vector3(
-              targetX,
-              playerGroup.position.y + 2.5, 
-              targetZ
-            );
-            raycaster.set(rayOriginTop, downVector);
-            const intersects = raycaster.intersectObjects(terrainObjects, true);
+      if (intersects.length > 0) {
+        const groundHeightAtTarget = intersects[0].point.y;
+        const currentHeight = playerGroup.position.y;
+        const heightDiff = groundHeightAtTarget - currentHeight;
 
-            if (intersects.length > 0) {
-              const groundHeightAtTarget = intersects[0].point.y;
-              const currentHeight = playerGroup.position.y;
-              const heightDiff = groundHeightAtTarget - currentHeight;
-
-              if (heightDiff > maxStepHeight) {
-                isBlocked = true;
-              }
-            }
-          }
-          if (!isBlocked) {
-            playerGroup.position.x = targetX;
-            playerGroup.position.z = targetZ;
-          }
+        if (heightDiff > maxStepHeight) {
+          isBlocked = true;
+        }
+      }
+    }
+    if (!isBlocked) {
+      playerGroup.position.x = targetX;
+      playerGroup.position.z = targetZ;
+    }
 
     const nextPos = playerGroup.position.clone();
     const potentialY = nextPos.y + velocity.y * delta;
@@ -645,11 +692,7 @@ function animate() {
     let groundHeight = -999;
 
     if (terrainObjects.length > 0) {
-      const rayOrigin = new THREE.Vector3(
-        nextPos.x,
-        nextPos.y + 50,
-        nextPos.z
-      );
+      const rayOrigin = new THREE.Vector3(nextPos.x, nextPos.y + 50, nextPos.z);
       raycaster.set(rayOrigin, downVector);
       const intersects = raycaster.intersectObjects(terrainObjects, true);
 
@@ -671,32 +714,29 @@ function animate() {
       new THREE.Vector3(nextPos.x, potentialY + 0.8, nextPos.z),
       new THREE.Vector3(0.6, 1.6, 0.6)
     );
-          for (let box of islandColliders) {
-            if (footBox.intersectsBox(box)) {
-              if (
-                velocity.y <= 0 &&
-                playerGroup.position.y >= box.max.y - 0.5
-              ) {
-                if (box.max.y > groundHeight) {
-                  groundHeight = box.max.y;
-                  onGround = true;
-                }
-              }
-            }
-            if (bodyBox.intersectsBox(box)) {
-              const overlapY = Math.min(
-                bodyBox.max.y - box.min.y,
-                box.max.y - bodyBox.min.y
-              );
-              if (overlapY > 0.2 && playerGroup.position.y < box.max.y - 0.1) {
-                playerGroup.position.x -= targetX - playerGroup.position.x;
-                playerGroup.position.z -= targetZ - playerGroup.position.z;
-              }
-              if (velocity.y > 0 && playerGroup.position.y < box.min.y) {
-                velocity.y = -2;
-              }
-            }
+    for (let box of islandColliders) {
+      if (footBox.intersectsBox(box)) {
+        if (velocity.y <= 0 && playerGroup.position.y >= box.max.y - 0.5) {
+          if (box.max.y > groundHeight) {
+            groundHeight = box.max.y;
+            onGround = true;
           }
+        }
+      }
+      if (bodyBox.intersectsBox(box)) {
+        const overlapY = Math.min(
+          bodyBox.max.y - box.min.y,
+          box.max.y - bodyBox.min.y
+        );
+        if (overlapY > 0.2 && playerGroup.position.y < box.max.y - 0.1) {
+          playerGroup.position.x -= targetX - playerGroup.position.x;
+          playerGroup.position.z -= targetZ - playerGroup.position.z;
+        }
+        if (velocity.y > 0 && playerGroup.position.y < box.min.y) {
+          velocity.y = -2;
+        }
+      }
+    }
 
     if (onGround) {
       playerGroup.position.y = groundHeight;
